@@ -1,143 +1,121 @@
 # rack-charts-api
 
-Rack middleware that serves charts as PNG images or interactive HTML pages.
-Pass chart data via URL params or JSON body, get back a Gruff-rendered PNG
-or a standalone HTML page with a [chartkick](https://github.com/ankane/chartkick)/Chart.js
-chart you can embed in an `<iframe>`.
+Rack middleware that turns a JSON hash into a chart. Add one line to your
+app, then request any URL under `/charts` -- append `.png` for a
+server-rendered image, or `.html` for an interactive Chart.js page you can
+drop into an `<iframe>`.
+
+Data formats are compatible with [chartkick](https://github.com/ankane/chartkick).
 
 ## Install
 
 ```ruby
-# Gemfile
 gem "rack-charts-api"
 ```
 
-Requires ImageMagick on the host (Gruff depends on RMagick).
+ImageMagick is required on the host for PNG rendering.
 
-## Mount it
+## Setup
 
-### Rails
+One line. Pick whichever matches your app:
 
 ```ruby
-# config/application.rb
+# Rails -- config/application.rb
 config.middleware.use Rack::ChartsApi
-```
 
-### config.ru (Sinatra, Roda, bare Rack)
-
-```ruby
+# config.ru -- Sinatra, Roda, or bare Rack
 require "rack/charts_api"
 use Rack::ChartsApi
 run MyApp
 ```
 
-### Custom mount path
+That mounts the chart endpoint at `/charts`. To change it:
 
 ```ruby
-use Rack::ChartsApi, path: "/api/charts"
+use Rack::ChartsApi, path: "/api/v1/charts"
 ```
 
-Default path is `/charts`.
+## Quick examples
 
-## Data formats (chartkick-compatible)
-
-All formats that [chartkick](https://github.com/ankane/chartkick) accepts
-work here. The `data` parameter is always JSON.
-
-### Single series -- hash
-
-```json
-{"Jan": 10, "Feb": 20, "Mar": 30}
-```
-
-### Single series -- array of pairs
-
-```json
-[["Jan", 10], ["Feb", 20], ["Mar", 30]]
-```
-
-### Multiple series
-
-```json
-[
-  {"name": "Revenue", "data": {"Q1": 100, "Q2": 200, "Q3": 300}},
-  {"name": "Expenses", "data": {"Q1": 80, "Q2": 150, "Q3": 250}}
-]
-```
-
-### Flat array of numbers
-
-```json
-[10, 20, 30, 40, 50]
-```
-
-## Get a PNG
-
-Pass `data` as a query param. The response is a binary PNG.
+### PNG image
 
 ```
 GET /charts.png?data={"Jan":10,"Feb":20,"Mar":30}
 ```
 
-With dimensions and chart type:
+Returns a `800x600` PNG line chart.
+
+### HTML page
 
 ```
-GET /charts.png?data={"Jan":10,"Feb":20,"Mar":30}&w=600&h=300&type=bar&title=Sales
+GET /charts.html?data={"Jan":10,"Feb":20,"Mar":30}
 ```
 
-### PNG from curl
+Returns a self-contained HTML document with an interactive Chart.js chart.
+No extension defaults to HTML.
+
+### Resize
+
+```
+GET /charts.png?data={"Jan":10,"Feb":20,"Mar":30}&w=600&h=300
+```
+
+### Change chart type
+
+```
+GET /charts.png?data={"Jan":10,"Feb":20,"Mar":30}&type=bar
+GET /charts.html?data={"Jan":10,"Feb":20,"Mar":30}&type=pie
+```
+
+### Add a title
+
+```
+GET /charts.png?data={"Jan":10,"Feb":20,"Mar":30}&type=bar&title=Monthly+Sales
+```
+
+### Combine everything
+
+```
+GET /charts.png?data={"Jan":10,"Feb":20,"Mar":30}&w=1024&h=512&type=area&title=Revenue
+```
+
+## Data formats
+
+The `data` param is JSON. All [chartkick](https://github.com/ankane/chartkick#data)
+formats work.
+
+### Hash (single series)
+
+```
+?data={"Jan":10,"Feb":20,"Mar":30}
+```
+
+### Array of pairs
+
+```
+?data=[["Jan",10],["Feb",20],["Mar",30]]
+```
+
+### Multiple series
+
+```
+?data=[{"name":"Revenue","data":{"Q1":100,"Q2":200}},{"name":"Costs","data":{"Q1":80,"Q2":150}}]
+```
+
+### Flat array
+
+```
+?data=[10,20,30,40,50]
+```
+
+## POST for large payloads
+
+When the data is too big for a query string, POST a JSON body instead.
+The structure is the same -- put chart data under a `"data"` key and
+options at the top level:
 
 ```bash
-curl -G "http://localhost:3000/charts.png" \
-  --data-urlencode 'data={"Jan":10,"Feb":20,"Mar":30}' \
-  --data-urlencode 'type=bar' \
-  --data-urlencode 'w=800' \
-  --data-urlencode 'h=400' \
-  -o chart.png
-```
-
-## Get an HTML page (for iframes)
-
-Same interface, different extension:
-
-```
-GET /charts.html?data={"Jan":10,"Feb":20,"Mar":30}&type=line
-```
-
-Returns a self-contained HTML document that loads Chart.js and chartkick
-from CDN and renders an interactive chart. No other dependencies needed.
-
-### Embed in an iframe
-
-```html
-<iframe
-  src="/charts.html?data=%7B%22Jan%22%3A10%2C%22Feb%22%3A20%7D&type=line&w=600&h=300"
-  width="600"
-  height="300"
-  frameborder="0">
-</iframe>
-```
-
-### Default format
-
-Requesting `/charts` without an extension returns HTML:
-
-```
-GET /charts?data={"Jan":10,"Feb":20}
-```
-
-You can also force PNG via the `Accept` header:
-
-```
-GET /charts?data=... -H "Accept: image/png"
-```
-
-## POST with JSON body
-
-When the data is too large for a query string, POST it:
-
-```bash
-curl -X POST "http://localhost:3000/charts.png" \
+curl -X POST http://localhost:3000/charts.png \
   -H "Content-Type: application/json" \
   -d '{
     "data": [
@@ -148,65 +126,112 @@ curl -X POST "http://localhost:3000/charts.png" \
     "w": 1024,
     "h": 512,
     "title": "Quarterly Report"
-  }'
+  }' \
   -o report.png
 ```
 
-HTML works the same way:
+Works for HTML too:
 
 ```bash
-curl -X POST "http://localhost:3000/charts.html" \
+curl -X POST http://localhost:3000/charts.html \
   -H "Content-Type: application/json" \
   -d '{"data": {"Chrome": 65, "Firefox": 15, "Safari": 10}, "type": "pie"}'
 ```
 
-## All parameters
+## Embed in an iframe
 
-| Param   | Default | Description                                                    |
-|---------|---------|----------------------------------------------------------------|
-| `data`  | --      | Chart data (JSON). Required.                                   |
-| `type`  | `line`  | Chart type: `line`, `bar`, `column`, `pie`, `area`, `scatter`, `side_bar`, `stacked_bar`, `dot` |
-| `w`     | `800`   | Width in pixels                                                |
-| `h`     | `600`   | Height in pixels                                               |
-| `title` | --      | Chart title                                                    |
-| `colors`| --      | Array of hex color strings (JSON)                              |
-| `labels`| --      | X-axis labels as hash or array (JSON)                          |
+The `.html` endpoint is a complete page -- no extra CSS or JS needed on
+your side. Just point an iframe at it:
 
-## Chart type mapping
-
-The `type` param maps to different backends depending on the response format:
-
-| `type`         | PNG (Gruff)          | HTML (chartkick.js)   |
-|----------------|----------------------|-----------------------|
-| `line`         | `Gruff::Line`        | `Chartkick.LineChart`    |
-| `bar`          | `Gruff::Bar`         | `Chartkick.ColumnChart`  |
-| `column`       | `Gruff::Bar`         | `Chartkick.ColumnChart`  |
-| `pie`          | `Gruff::Pie`         | `Chartkick.PieChart`     |
-| `area`         | `Gruff::Area`        | `Chartkick.AreaChart`    |
-| `scatter`      | `Gruff::Line`        | `Chartkick.ScatterChart` |
-| `side_bar`     | `Gruff::SideBar`     | `Chartkick.BarChart`     |
-| `stacked_bar`  | `Gruff::StackedBar`  | `Chartkick.ColumnChart` (stacked) |
+```erb
+<iframe
+  src="/charts.html?data=<%= URI.encode_www_form_component(@data.to_json) %>&type=line&w=700&h=350"
+  width="700"
+  height="350"
+  frameborder="0">
+</iframe>
+```
 
 ## Use from a Rails controller
 
+The middleware runs alongside your app. Your controllers can redirect to
+it or build URLs for views:
+
 ```ruby
 class ReportsController < ApplicationController
-  def chart
-    data = { "Q1" => 100, "Q2" => 200, "Q3" => 300 }
+  def sales_chart
+    data = Order.group_by_month(:created_at, last: 6).sum(:total)
+    redirect_to "/charts.png?#{chart_params(data, type: :bar, title: "Sales")}"
+  end
 
-    redirect_to "/charts.png?data=#{URI.encode_www_form_component(data.to_json)}&type=bar&w=600&h=300"
+  private
+
+  def chart_params(data, **opts)
+    { data: data.to_json, **opts }.to_query
   end
 end
 ```
 
-Or embed it:
-
 ```erb
+<%# In a view -- inline chart image %>
+<img src="/charts.png?<%= { data: @data.to_json, type: :line, w: 600, h: 300 }.to_query %>" />
+
+<%# Interactive version in an iframe %>
 <iframe
-  src="/charts.html?data=<%= URI.encode_www_form_component(@chart_data.to_json) %>&type=line&w=700&h=350"
-  width="700" height="350" frameborder="0">
+  src="/charts.html?<%= { data: @data.to_json, type: :line, w: 600, h: 300 }.to_query %>"
+  width="600" height="300" frameborder="0">
 </iframe>
 ```
+
+## Save a PNG with curl
+
+```bash
+curl -G http://localhost:3000/charts.png \
+  --data-urlencode 'data={"Jan":10,"Feb":20,"Mar":30}' \
+  --data-urlencode 'type=bar' \
+  --data-urlencode 'w=800' \
+  --data-urlencode 'h=400' \
+  --data-urlencode 'title=Monthly Sales' \
+  -o chart.png
+```
+
+## Content negotiation
+
+Without a file extension, the response format depends on the `Accept`
+header:
+
+```bash
+# Returns PNG
+curl http://localhost:3000/charts?data=... -H "Accept: image/png" -o chart.png
+
+# Returns HTML (default)
+curl http://localhost:3000/charts?data=...
+```
+
+## Parameters
+
+| Param    | Default | Description |
+|----------|---------|-------------|
+| `data`   | --      | **Required.** Chart data as JSON. |
+| `type`   | `line`  | `line` `bar` `column` `pie` `area` `scatter` `side_bar` `stacked_bar` `dot` |
+| `w`      | `800`   | Width in pixels. |
+| `h`      | `600`   | Height in pixels. |
+| `title`  | --      | Chart title. |
+| `colors` | --      | JSON array of hex color strings. |
+| `labels` | --      | JSON hash or array of x-axis labels. |
+
+## Chart types
+
+| `type`         | PNG renderer         | HTML renderer              |
+|----------------|----------------------|----------------------------|
+| `line`         | `Gruff::Line`        | `Chartkick.LineChart`      |
+| `bar`          | `Gruff::Bar`         | `Chartkick.ColumnChart`    |
+| `column`       | `Gruff::Bar`         | `Chartkick.ColumnChart`    |
+| `pie`          | `Gruff::Pie`         | `Chartkick.PieChart`       |
+| `area`         | `Gruff::Area`        | `Chartkick.AreaChart`      |
+| `scatter`      | `Gruff::Line`        | `Chartkick.ScatterChart`   |
+| `side_bar`     | `Gruff::SideBar`     | `Chartkick.BarChart`       |
+| `stacked_bar`  | `Gruff::StackedBar`  | `Chartkick.ColumnChart`    |
 
 ## Running tests
 
